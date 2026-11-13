@@ -1,0 +1,128 @@
+Testcontainers + MySQL + JPA One-to-Many demo
+==============================================
+
+Что входит в проект
+-------------------
+
+- Spring Boot 3.x + Java 17
+- Gradle Kotlin DSL
+- Hibernate JPA
+- Связь `Customer` -> `Order` как `@OneToMany`
+- Docker Compose для запуска MySQL, используемой приложением
+- Testcontainers для отдельной MySQL в интеграционных тестах
+- `CommandLineRunner` для загрузки демо-данных в logs
+
+Архитектура
+-----------
+
+- Основная база приложения: `app_demo` (MySQL через Docker Compose)
+- Тестовая база: контейнер MySQL, стартующий внутри Testcontainers
+- App DB и Test DB разделены логически и по окружению
+
+Элементы проекта
+----------------
+
+- `Customer` — главный клиент, одна сторона One-to-Many
+- `Order` — дочерние заказы, сторона Many-to-One
+- `CustomerRepository` / `OrderRepository` — Spring Data JPA repositories
+- `CustomerService` — сервис для создания клиента с заказами
+- `CustomerController` — REST endpoint для получения и создания клиента
+- `AppBootstrap` — `CommandLineRunner`, который добавляет стартовые данные в логах при старте
+- `CustomerRepositoryIntegrationTest` — интеграционный тест с Testcontainers и MySQL
+
+Подготовка и запуск приложения
+-------------------------------
+
+Требуются:
+
+- JDK 17+
+- Gradle 8+
+- Docker + Docker Compose
+
+Поднять MySQL для основного приложения:
+
+```bash
+docker compose up -d
+```
+
+Приложение запускается на `http://localhost:8080`.
+
+```bash
+gradle bootRun
+```
+
+Проверить список клиентов:
+
+```bash
+curl http://localhost:8080/api/customers
+```
+
+Создать клиента с заказами:
+
+```bash
+curl -i -X POST http://localhost:8080/api/customers \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Charlie Brown",
+    "email": "charlie@example.com",
+    "city": "London",
+    "orders": [
+      {"product": "Tablet", "total": 540.0},
+      {"product": "Cover", "total": 30.0}
+    ]
+  }'
+```
+
+После старта приложения в логах должен появиться `Bootstrapped demo data into MySQL app database`.
+
+Запуск тестов с Testcontainers
+------------------------------
+
+Тесты запускаются автоматически через `MySQLContainer` из Testcontainers.
+
+```bash
+gradle test
+```
+
+Логика теста:
+
+- запускается отдельный контейнер MySQL `mysql:8.0.36`
+- создаётся database `demo_test`
+- приложение подключается к этому контейнеру через `@ServiceConnection`
+- сохраняется `Customer` с двумя `Order`
+- проверяется, что связанные сущности реально записаны и связаны корректно
+
+Команды для проверки контейнера вручную:
+
+```bash
+docker compose up -d
+docker ps
+mysql -h 127.0.0.1 -P 3306 -u demo -pdemo123 -e "SHOW DATABASES;"
+```
+
+Для остановки и удаления контейнера:
+
+```bash
+docker compose down
+```
+
+Чтобы удалить локальные данные MySQL:
+
+```bash
+docker compose down -v
+```
+
+Основное отличие между базами
+-----------------------------
+
+- `app_demo` — база для основного приложения и отладки/демо данных
+- `demo_test` — отдельная база, создаваемая Testcontainers для интеграционных проверок
+
+Это позволяет держать запуск приложения и тесты независимыми друг от друга.
+
+Production notes
+----------------
+
+- Для production лучше используйте отдельный конфигурационный профиль и Flyway/Liquibase.
+- Настройки подключения к БД лучше держать в env-переменных либо в secret manager.
+- В учебном проекте `ddl-auto: update` для краткости; в production чаще рекомендуют `validate` и миграции.
